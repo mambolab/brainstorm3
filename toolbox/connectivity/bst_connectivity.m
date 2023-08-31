@@ -977,6 +977,14 @@ for iFile = 1:nFiles
                     R(:,:,1,iBand) = PTE;
                 end
             end
+
+        case {'mim', 'mpsi'}
+
+            DisplayUnits = 'Multivariate Connectivity';
+            bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nA, nB));
+            Comment = 'MVCONN';
+
+            R = ml_mvconnectivity(sInputA.Data, sInputB.Data, OPTIONS.Method, size(sInputA.Data, 2), BandBounds);
             
         % ==== henv ====
         case 'henv'
