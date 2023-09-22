@@ -984,7 +984,10 @@ for iFile = 1:nFiles
             bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nA, nB));
             Comment = 'MVCONN';
 
-            R = ml_mvconnectivity(sInputA.Data, sInputB.Data, OPTIONS.Method, size(sInputA.Data, 2), BandBounds);
+            R = zeros(nFreqBands,1);
+            for iBand = 1:nFreqBands
+                R(iBand, 1) = ml_mvconnectivity(sInputA.Data, sInputB.Data, OPTIONS.Method, size(sInputA.Data, 2), sfreq, BandBounds(iBand, :));
+            end
             
         % ==== henv ====
         case 'henv'
