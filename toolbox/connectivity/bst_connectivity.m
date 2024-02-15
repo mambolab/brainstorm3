@@ -984,23 +984,73 @@ for iFile = 1:nFiles
         case {'mim', 'mpsi'}
 
             DisplayUnits = 'Multivariate Connectivity';
-            bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nA, nB));
             Comment = 'MVCONN';
+            
+            
+            rowNames = cell(numel(sInputA.RowNames), 3);
+            nSources = numel(sInputA.RowNames);
 
-            if ~isempty(OPTIONS.ReductionNComponents)
-                SA = pca(sInputA.Data, 'NumComponents', OPTIONS.ReductionNComponents{1});
-                XA = SA';
+            % Split the RowNames structure in order to have
+            % ScoutName, Vertex and Direction in three rows
+            for i = 1:nSources
+                % Split the string using '.' as the delimiter
+                parts = strsplit(sInputA.RowNames{i}, '.');
 
-                SB = pca(sInputB.Data, 'NumComponents', OPTIONS.ReductionNComponents{1});
-                XB = SB';
-            else
-                XA = sInputA.Data;
-                XB = sInputB.Data;
+                % Assign the parts to the columns of the result cell array
+                for j = 1:min(3, numel(parts))
+                    rowNames{i, j} = parts{j};
+                end
             end
 
-            R = zeros(nFreqBands,1);
+            % We converted the vertices from string to double
+            % for later comparison
+            scout_vertices = str2double(rowNames(:, 2));
+            
+            nScouts = numel(sInputA.Atlas.Scouts);
+            for s = 1:nScouts
+                scout = sInputA.Atlas.Scouts(s);
+                scout_mask = zeros(size(sInputA.Data, 1), 1, 'logical');
+                
+                % We want signals from vertices in the scout
+                for v = 1:numel(scout.Vertices)
+                    vertex = scout.Vertices(v);
+                    mask = scout_vertices == vertex;
+                    scout_mask = scout_mask | mask;
+                end
+                
+                % Extracting data from scout
+                scout_data = sInputA.Data(scout_mask, :);
+                
+                % We use a PCA with nComponents from UI
+                % TODO: Manage the possibility to do not reduce data.
+                reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                
+                out{s} = reduced_data';
+            end
+            
+            
+            bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
+            % R = [84 x 84 x 1871 x 6]
+            
+            % Output structure: it must be with these dimensions.
+            % Unfortunately for unconstrained sources we need to enlarge
+            % the matrix.
+            R = zeros(numel(out) * 3, numel(out) * 3, nTime, nFreqBands);
+            
             for iBand = 1:nFreqBands
-                R(iBand, 1) = ml_mvconnectivity(XA, XB, OPTIONS.Method, size(XA, 2), size(XA, 2), sfreq, BandBounds(iBand, :));
+                for a = 1:numel(out)
+                    for b = 1:numel(out)
+                        XA = cell2mat(out(a));
+                        XB = cell2mat(out(b));
+                        connectivity = ml_mvconnectivity(XA, XB, OPTIONS.Method, ...
+                                                       size(XA, 2), size(XA, 2), ...
+                                                       sfreq, BandBounds(iBand, :));
+                        % Here we want to fill only a part of the matrix
+                        % which the will be summed over zeros (see
+                        % Finalize)
+                        R(a*3, b*3, 1, iBand) = connectivity;
+                    end
+                end
             end
             
         % ==== henv ====
@@ -1176,6 +1226,7 @@ function NewFile = Finalize(DataFile)
                         R = imag(R.Sab).^2 ./ (1-real(R.Sab).^2);
                         R(isnan(R(:))) = 0;
                 end
+                
         end
         % Static measures may need to be reshaped to add singleton time dimension.
         if ndims(R) == 3
@@ -1192,13 +1243,17 @@ function NewFile = Finalize(DataFile)
 
     %% ===== PROCESS UNCONSTRAINED SOURCES: MAX =====
     % R matrix is: [nA x nB x nTime x nFreq]
-    if isUnconstrA || isUnconstrB
-        % If there are negative values: take the value with maximum magnitude
-        if ~isreal(R) || any(R(:) < 0)
-            UnconstrFunc = 'absmax';
-        % If all the values are positive: use Matlab's max()
+    if isUnconstrA || isUnconstrB 
+        if ~strcmp(OPTIONS.Method, 'mpsi') && ~strcmp(OPTIONS.Method, 'mim')
+            % If there are negative values: take the value with maximum magnitude
+            if ~isreal(R) || any(R(:) < 0)
+                UnconstrFunc = 'absmax';
+            % If all the values are positive: use Matlab's max()
+            else
+                UnconstrFunc = 'max';
+            end
         else
-            UnconstrFunc = 'max';
+            UnconstrFunc = 'sum';
         end
         % Dimension #1
         if isUnconstrA

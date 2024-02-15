@@ -122,8 +122,9 @@ function OutputFiles = Run(sProcess, sInputA)
         return
     end
 
-  % Keep time or not: different methods   FIXME
+    % Keep time or not: different methods   FIXME
     OPTIONS.Method = sProcess.options.mpsimeasure.Value;
+    % TODO: Remove this line
     OPTIONS.Method = 'mpsi';
     
     if sProcess.options.keeptime.Value
