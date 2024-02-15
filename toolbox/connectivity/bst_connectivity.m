@@ -984,7 +984,7 @@ for iFile = 1:nFiles
         case {'mim', 'mpsi'}
 
             DisplayUnits = 'Multivariate Connectivity';
-            Comment = 'MVCONN';
+            Comment = upper(OPTIONS.Method);
             
             
             rowNames = cell(numel(sInputA.RowNames), 3);
