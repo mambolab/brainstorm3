@@ -128,12 +128,14 @@ function sProcess = DefineConnectOptions(sProcess, isConnNN) %#ok<DEFNU>
     sProcess.options.scouts.Value      = {};
     sProcess.options.scouts.InputTypes = {'results'};
     sProcess.options.scouts.Group      = 'input';
+    
     % === UNCONSTRAINED SOURCES ===
     sProcess.options.flatten.Comment    = 'Flatten unconstrained source orientations with PCA first';
     sProcess.options.flatten.Type       = 'checkbox';
     sProcess.options.flatten.Value      = 0;
     sProcess.options.flatten.InputTypes = {'results'};
     sProcess.options.flatten.Group      = 'input';
+    
     % === SCOUT TIME ===
     sProcess.options.scouttime.Comment    = {'before&nbsp;&nbsp;&nbsp;', 'after&nbsp;&nbsp;&nbsp; connectivity metric', 'Scout function: &nbsp;&nbsp;&nbsp;Apply'; ...
                                              'before', 'after', ''};
@@ -142,6 +144,7 @@ function sProcess = DefineConnectOptions(sProcess, isConnNN) %#ok<DEFNU>
     sProcess.options.scouttime.InputTypes = {'results'};
     sProcess.options.scouttime.Group      = 'input';
     sProcess.options.scouttime.Controller = struct('before', 'before', 'after', 'after');
+    
     % === SCOUT FUNCTION ===    
     sProcess.options.scoutfunc.Comment    = {'PCA&nbsp;&thinsp;&thinsp;', 'Mean&nbsp;', 'All', '&nbsp;&nbsp;&nbsp;'; ...
                                              'pca', 'mean', 'all', ''};
@@ -177,7 +180,7 @@ function OPTIONS = GetConnectOptions(sProcess, sInputA) %#ok<DEFNU>
     % Connectivity type: [1xN] or [NxN]
     isConnNN = ismember(OPTIONS.ProcessName, {'process_corr1n', 'process_corr1n_time' ...
         'process_cohere1n', 'process_cohere1n_2021', 'process_cohere1n_time', 'process_cohere1n_time_2021', ...
-        'process_granger1n', 'process_spgranger1n', ...
+        'process_granger1n', 'process_spgranger1n', 'process_mpsi1n', ...
         'process_plv1n', 'process_pte1n', 'process_aec1n', 'process_henv1n'});
     
     % === TIME WINDOW ===

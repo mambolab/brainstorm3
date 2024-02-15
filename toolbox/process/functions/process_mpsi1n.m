@@ -1,4 +1,4 @@
-function varargout = process_mPSI1( varargin )
+function varargout = process_mPSI1n( varargin )
 
 % PROCESS_MPSI1: Compute the multivariate Phase Slope Index between one signal and all the others, in one file.
 %
@@ -20,10 +20,11 @@ function varargout = process_mPSI1( varargin )
 % Comments, bug reports, etc are welcome.
 % =============================================================================@
 %
-% Authors: Alessio Basti (alessio.basti@unich.it)
-%               Roberto Guidotti (r.guidotti@unich.it) 
-%               Laura Marzetti (laura.marzetti@unich.it)
-%               Vittorio Pizzella (vittorio.pizzella@unich.it) 
+% Authors:  Alessio Basti (alessio.basti@unich.it)
+%           Roberto Guidotti (r.guidotti@unich.it)
+%           Giulia Pieramico (giulia.pieramico@unich.it)
+%           Laura Marzetti (laura.marzetti@unich.it)
+%           Vittorio Pizzella (vittorio.pizzella@unich.it) 
 %
 eval(macro_method);
 end
@@ -32,36 +33,62 @@ end
 %% ===== GET DESCRIPTION =====
 function sProcess = GetDescription() 
     % Description the process
-    sProcess.Comment     = 'multivariate Phase Slope Index 1xN';
+    sProcess.Comment     = 'multivariate Phase Slope Index NxN';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = 'Connectivity';
     % sProcess.IsSeparator = 1; FIXME
     sProcess.Index       = 1000;
     % Definition of the input accepted by this process
-    sProcess.InputTypes  = {'data', 'results', 'matrix'};
-    sProcess.OutputTypes = {'timefreq', 'timefreq', 'timefreq'};
+    sProcess.InputTypes  = {'results'};
+    sProcess.OutputTypes = {'timefreq'};
     sProcess.nInputs     = 1;
     sProcess.nMinFiles   = 1;
     
     % === CONNECT INPUT
-    sProcess = process_corr1n('DefineConnectOptions', sProcess, 0);
+    sProcess = process_corr1n('DefineConnectOptions', sProcess, 1);
+
+    % === UNCONSTRAINED SOURCES ===
+    sProcess.options.reduction.Comment    = 'Number of PCs to use';
+    sProcess.options.reduction.Type       = 'value';
+    sProcess.options.reduction.Group      = 'input';
+    sProcess.options.reduction.Value      = {3, ' ', 0};
+
+    % === UNCONSTRAINED SOURCES ===
+    sProcess.options.segleng.Comment    = 'Segment Lenght (0=full)';
+    sProcess.options.segleng.Type       = 'value';
+    sProcess.options.segleng.Group      = 'input';
+    sProcess.options.segleng.Value      = {0, ' pts.', 0};
+
+    % === UNCONSTRAINED SOURCES ===
+    sProcess.options.epleng.Comment    = 'Epoch lenght (0=full)';
+    sProcess.options.epleng.Type       = 'value';
+    sProcess.options.epleng.Group      = 'input';
+    sProcess.options.epleng.Value      = {0, ' pts.', 0};
+
     % === FREQ BANDS
     sProcess.options.freqbands.Comment = 'Frequency bands for the Hilbert transform:';
     sProcess.options.freqbands.Type    = 'groupbands';
     sProcess.options.freqbands.Value   = bst_get('DefaultFreqBands');
+    
     % === KEEP TIME
     sProcess.options.keeptime.Comment = 'Keep time information, and estimate mPSI across trials<BR>(requires the average of many trials)';
     sProcess.options.keeptime.Type    = 'checkbox';
-    sProcess.options.keeptime.Value   = 0;
+    sProcess.options.keeptime.Value   = 0;  
+    
     % === mPSI MEASURE
-    sProcess.options.mpsimeasure.Comment = {'None (complex)', 'Magnitude', 'Measure:'};
+    sProcess.options.mpsimeasure.Comment = {'MIM', 'MPSI', 'Measure:'};
     sProcess.options.mpsimeasure.Type    = 'radio_line';
     sProcess.options.mpsimeasure.Value   = 2;
+
     % === OUTPUT MODE
     sProcess.options.outputmode.Comment = {'Save individual results (one file per input file)', 'Concatenate input files before processing (one file)', 'Save average connectivity matrix (one file)'};
     sProcess.options.outputmode.Type    = 'radio';
     sProcess.options.outputmode.Value   = 1;
     sProcess.options.outputmode.Group   = 'output';
+
+    sProcess.options = rmfield(sProcess.options, 'pcaedit');
+    sProcess.options = rmfield(sProcess.options, 'flatten');
+
 end
 
 %% ===== FORMAT COMMENT =====
@@ -117,9 +144,15 @@ function OutputFiles = Run(sProcess, sInputA)
         OPTIONS.PlvMeasure = 'magnitude';
     end
     
+    % PCA
+    if isfield(sProcess.options, 'reduction')
+        OPTIONS.ReductionNComponents = sProcess.options.reduction.Value;
+    end
+        
+    
     % Compute metric
     %OutputFiles = Compute(sInputA, sInputA, OPTIONS);
-    OutputFiles = bst_connectivity(sInputA, sInputA, OPTIONS);
+    OutputFiles = bst_connectivity(sInputA, [], OPTIONS);
 end
 
 
@@ -140,32 +173,3 @@ nAvg = 0;
 % size(DataA)
 % size(DataB)
 end
-
-
-%     cross_spectrum = signal1 .* conj(signal2);
-% 
-%     % Instantaneous phase difference: 
-%     dphi    = angle( cross_spectrum );
-% 
-%     switch cfg.method
-% 
-%         case 'iplv' 
-%             value    = abs(mean( imag(exp(sqrt(-1)*( dphi )))));
-%         case 'plv' 
-%             value    = abs(mean(exp(sqrt(-1)*( dphi ))));
-%         case 'pli'
-%             value    = abs(mean( sign(dphi) ));
-%         case 'wpli'
-%             value    = abs( mean( abs(imag(cross_spectrum )) .*  sign(dphi)  ) ./ mean( abs(imag( cross_spectrum )) ) );
-%         case 'imcoh'
-%             amplitude1 = abs(signal1);
-%             amplitude2 = abs(signal2);
-%             value    = imag( mean(cross_spectrum) ./ sqrt(mean(amplitude1.^2) .* mean(amplitude2.^2)));
-%         case 'wplideb'
-%             imcoh    = imag( cross_spectrum  );
-%             numerator = sum(imcoh).^2 - sum(imcoh.^2);
-%             denominator = sum(abs(imcoh)).^2 - sum(abs(imcoh).^2);
-%             value = sqrt(abs(numerator ./ denominator));
-% 
-%         otherwise
-%             value    = abs(mean( imag(exp(sqrt(-1)*( dphi )))));

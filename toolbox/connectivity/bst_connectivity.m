@@ -162,13 +162,16 @@ if bst_get('UseSigProcToolbox')
 else
     hilbert_fcn = @oc_hilbert;
 end
+
 % Were scouts requested?
 OPTIONS.isScoutA = ~isempty(OPTIONS.TargetA) && (isstruct(OPTIONS.TargetA) || iscell(OPTIONS.TargetA));
 OPTIONS.isScoutB = ~isempty(OPTIONS.TargetB) && (isstruct(OPTIONS.TargetB) || iscell(OPTIONS.TargetB));
+
 % No scouts. Avoid confusion.
 if ~OPTIONS.isScoutA && ~OPTIONS.isScoutB
     OPTIONS.ScoutFunc = 'all';
 end
+
 % Error if trying to compute across multiple subjects, but skip for legacy calls (file names instead of input structures).
 % There are further checks later when using scouts, if mixing surface files.
 if ~isempty(FilesA) && isstruct(FilesA) && ~strcmpi(OPTIONS.OutputMode, 'input')
@@ -984,9 +987,20 @@ for iFile = 1:nFiles
             bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nA, nB));
             Comment = 'MVCONN';
 
+            if ~isempty(OPTIONS.ReductionNComponents)
+                SA = pca(sInputA.Data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                XA = SA';
+
+                SB = pca(sInputB.Data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                XB = SB';
+            else
+                XA = sInputA.Data;
+                XB = sInputB.Data;
+            end
+
             R = zeros(nFreqBands,1);
             for iBand = 1:nFreqBands
-                R(iBand, 1) = ml_mvconnectivity(sInputA.Data, sInputB.Data, OPTIONS.Method, size(sInputA.Data, 2), sfreq, BandBounds(iBand, :));
+                R(iBand, 1) = ml_mvconnectivity(XA, XB, OPTIONS.Method, size(XA, 2), size(XA, 2), sfreq, BandBounds(iBand, :));
             end
             
         % ==== henv ====
