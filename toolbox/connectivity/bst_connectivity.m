@@ -985,61 +985,87 @@ for iFile = 1:nFiles
 
             DisplayUnits = 'Multivariate Connectivity';
             Comment = upper(OPTIONS.Method);
-            
-            
-            rowNames = cell(numel(sInputA.RowNames), 3);
-            nSources = numel(sInputA.RowNames);
 
-            % Split the RowNames structure in order to have
-            % ScoutName, Vertex and Direction in three rows
-            for i = 1:nSources
-                % Split the string using '.' as the delimiter
-                parts = strsplit(sInputA.RowNames{i}, '.');
+            % Se NxN allora faccio solo scout
+            % Se 1xN fare tutte e due
+           
 
-                % Assign the parts to the columns of the result cell array
-                for j = 1:min(3, numel(parts))
-                    rowNames{i, j} = parts{j};
+            
+            % Look at isUnconstrained
+            if OPTIONS.isScoutA == 1
+                rowNames = cell(numel(sInputA.RowNames), 3);
+                nSources = numel(sInputA.RowNames);
+    
+                % Split the RowNames structure in order to have
+                % ScoutName, Vertex and Direction in three rows
+                for i = 1:nSources
+                    % Split the string using '.' as the delimiter
+                    parts = strsplit(sInputA.RowNames{i}, '.');
+    
+                    % Assign the parts to the columns of the result cell array
+                    for j = 1:min(3, numel(parts))
+                        rowNames{i, j} = parts{j};
+                    end
                 end
-            end
-
-            % We converted the vertices from string to double
-            % for later comparison
-            scout_vertices = str2double(rowNames(:, 2));
-            
-            nScouts = numel(sInputA.Atlas.Scouts);
-            for s = 1:nScouts
-                scout = sInputA.Atlas.Scouts(s);
-                scout_mask = zeros(size(sInputA.Data, 1), 1, 'logical');
+    
+                % We converted the vertices from string to double
+                % for later comparison
+                scout_vertices = str2double(rowNames(:, 2));
                 
-                % We want signals from vertices in the scout
-                for v = 1:numel(scout.Vertices)
-                    vertex = scout.Vertices(v);
-                    mask = scout_vertices == vertex;
-                    scout_mask = scout_mask | mask;
+                nScouts = numel(sInputA.Atlas.Scouts);
+                for s = 1:nScouts
+                    scout = sInputA.Atlas.Scouts(s);
+                    scout_mask = zeros(size(sInputA.Data, 1), 1, 'logical');
+                    
+                    % We want signals from vertices in the scout
+                    for v = 1:numel(scout.Vertices)
+                        vertex = scout.Vertices(v);
+                        mask = scout_vertices == vertex;
+                        scout_mask = scout_mask | mask;
+                    end
+                    
+                    % Extracting data from scout
+                    scout_data = sInputA.Data(scout_mask, :);
+                    
+                    % We use a PCA with nComponents from UI
+                    % TODO: Manage the possibility to do not reduce data.
+                    reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                    
+                    out{s} = reduced_data';
                 end
-                
-                % Extracting data from scout
-                scout_data = sInputA.Data(scout_mask, :);
-                
-                % We use a PCA with nComponents from UI
-                % TODO: Manage the possibility to do not reduce data.
-                reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
-                
-                out{s} = reduced_data';
+                bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
+
+            else
+                nSources = size(sInputA.Data, 1) / sInputA.nComponents;
+
+                for v = 1:nSources
+                    mask = sInputA.RowNames == v;
+                    source_data = sInputA.Data(mask', :);
+                    reduced_data = pca(source_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                    out{v} = reduced_data';
+                    
+                end
+                bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nSources, nSources));
+
             end
+           
             
-            
-            bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
             % R = [84 x 84 x 1871 x 6]
             
             % Output structure: it must be with these dimensions.
             % Unfortunately for unconstrained sources we need to enlarge
             % the matrix.
-            R = zeros(numel(out) * 3, numel(out) * 3, nTime, nFreqBands);
+            R =  ones(numel(out) * sInputA.nComponents, ...
+                      numel(out) * sInputA.nComponents, ...
+                      nTime, nFreqBands);
+
+            [rowId, colId] = find(tril(R(:,:,1,1), -1));
+
+            R(:, :, :, :) = 0;
             
             for iBand = 1:nFreqBands
-                for a = 1:numel(out)
-                    for b = 1:numel(out)
+                for a = 1:rowId
+                    for b = 1:colId
                         XA = cell2mat(out(a));
                         XB = cell2mat(out(b));
                         connectivity = ml_mvconnectivity(XA, XB, OPTIONS.Method, ...
@@ -1048,7 +1074,11 @@ for iFile = 1:nFiles
                         % Here we want to fill only a part of the matrix
                         % which the will be summed over zeros (see
                         % Finalize)
-                        R(a*3, b*3, 1, iBand) = connectivity;
+                        R(a * sInputA.nComponents, ...
+                          b * sInputA.nComponents, 1, iBand) = connectivity;
+
+                        R(b * sInputA.nComponents, ...
+                          a * sInputA.nComponents, 1, iBand) = connectivity;
                     end
                 end
             end
