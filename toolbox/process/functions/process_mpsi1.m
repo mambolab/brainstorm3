@@ -1,4 +1,4 @@
-function varargout = process_mPSI1n( varargin )
+function varargout = process_mPSI1( varargin )
 
 % PROCESS_MPSI1: Compute the multivariate Phase Slope Index between one signal and all the others, in one file.
 %
@@ -33,7 +33,7 @@ end
 %% ===== GET DESCRIPTION =====
 function sProcess = GetDescription() 
     % Description the process
-    sProcess.Comment     = 'Multivariate connectivity NxN';
+    sProcess.Comment     = 'Multivariate connectivity 1xN';
     sProcess.Category    = 'Custom';
     sProcess.SubGroup    = 'Connectivity';
     % sProcess.IsSeparator = 1; FIXME
@@ -153,7 +153,7 @@ function OutputFiles = Run(sProcess, sInputA)
     
     % Compute metric
     %OutputFiles = Compute(sInputA, sInputA, OPTIONS);
-    OutputFiles = bst_connectivity(sInputA, [], OPTIONS);
+    OutputFiles = bst_connectivity(sInputA, sInputA, OPTIONS);
 end
 
 
