@@ -986,67 +986,111 @@ for iFile = 1:nFiles
             DisplayUnits = 'Multivariate Connectivity';
             Comment = upper(OPTIONS.Method);
 
-            % Se NxN allora faccio solo scout
-            % Se 1xN fare tutte e due
-           
-
+            % Se NxN fare solo su scout
+            %   Se Unconstrained fare us PC
+            %   Se Constrained fare su PC
             
-            % Look at isUnconstrained
-            if OPTIONS.isScoutA == 1
-                rowNames = cell(numel(sInputA.RowNames), 3);
-                nSources = numel(sInputA.RowNames);
-    
-                % Split the RowNames structure in order to have
-                % ScoutName, Vertex and Direction in three rows
-                for i = 1:nSources
-                    % Split the string using '.' as the delimiter
-                    parts = strsplit(sInputA.RowNames{i}, '.');
-    
-                    % Assign the parts to the columns of the result cell array
-                    for j = 1:min(3, numel(parts))
-                        rowNames{i, j} = parts{j};
-                    end
-                end
-    
-                % We converted the vertices from string to double
-                % for later comparison
-                scout_vertices = str2double(rowNames(:, 2));
+            % Se 1xN fare solo se unconstrained
+            %   Fare PC su scout con nPC = 3
+           
+            if isConnNN
+
                 
-                nScouts = numel(sInputA.Atlas.Scouts);
-                for s = 1:nScouts
-                    scout = sInputA.Atlas.Scouts(s);
-                    scout_mask = zeros(size(sInputA.Data, 1), 1, 'logical');
-                    
-                    % We want signals from vertices in the scout
-                    for v = 1:numel(scout.Vertices)
-                        vertex = scout.Vertices(v);
-                        mask = scout_vertices == vertex;
-                        scout_mask = scout_mask | mask;
+                
+                if OPTIONS.isScoutA == OPTIONS.isScoutB
+                    rowNames = cell(numel(sInputA.RowNames), 3);
+                    nSources = numel(sInputA.RowNames);
+        
+                    % Split the RowNames structure in order to have
+                    % ScoutName, Vertex and Direction in three rows
+                    for i = 1:nSources
+                        % Split the string using '.' as the delimiter
+                        parts = strsplit(sInputA.RowNames{i}, '.');
+        
+                        % Assign the parts to the columns of the result cell array
+                        for j = 1:min(3, numel(parts))
+                            rowNames{i, j} = parts{j};
+                        end
                     end
+        
+                    % We converted the vertices from string to double
+                    % for later comparison
+                    scout_vertices = str2double(rowNames(:, 2));
                     
-                    % Extracting data from scout
-                    scout_data = sInputA.Data(scout_mask, :);
+                    nScouts = numel(sInputA.Atlas.Scouts);
+                    for s = 1:nScouts
+                        scout = sInputA.Atlas.Scouts(s);
+                        scout_mask = zeros(size(sInputA.Data, 1), 1, 'logical');
+                        
+                        % We want signals from vertices in the scout
+                        for v = 1:numel(scout.Vertices)
+                            vertex = scout.Vertices(v);
+                            mask = scout_vertices == vertex;
+                            scout_mask = scout_mask | mask;
+                        end
+                        
+                        % Extracting data from scout
+                        scout_data = sInputA.Data(scout_mask, :);
+                        
+                        % We use a PCA with nComponents from UI
+                        % TODO: Manage the possibility to do not reduce data.
+                        reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                        
+                        out{s} = reduced_data';
+                    end
+                    bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
                     
-                    % We use a PCA with nComponents from UI
-                    % TODO: Manage the possibility to do not reduce data.
-                    reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
                     
-                    out{s} = reduced_data';
+                    
+
+                else
+                    Messages = 'Cannot calculate MVCONN without scouts';
+                    bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
+
+
                 end
-                bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
+            end
 
-            else
-                nSources = size(sInputA.Data, 1) / sInputA.nComponents;
-
-                for v = 1:nSources
-                    mask = sInputA.RowNames == v;
-                    source_data = sInputA.Data(mask', :);
-                    reduced_data = pca(source_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
-                    out{v} = reduced_data';
+            if ~isConnNN
+                
+                if isUnconstrA
+                    
+                    out{1} = pca(sInputA.Data, 'NumComponents', 3);
+                
+                else
+                    Messages = 'Cannot calculate Multivariate Connectivity (1xN) with constrained sources.';
+                    bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
+                    
                     
                 end
-                bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nSources, nSources));
+                
+                
+                if isUnconstrB
+                
+                   rowNames = cell(numel(sInputB.RowNames), 3);
+                   nSources = numel(sInputB.RowNames);
 
+                   nSources = size(sInputB.Data, 1) / sInputB.nComponents;
+
+                    for v = 2:nSources+1
+                        mask = sInputB.RowNames == v;
+                        source_data = sInputB.Data(mask', :);
+                        out{v} = source_data;
+
+                    end
+                    bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nSources, nSources));
+                
+                else
+                    Messages = 'Cannot calculate Multivariate Connectivity (1xN) with constrained sources.';
+                    bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
+                    
+                    
+                end
+                                
+                rowId = ones(1, nSources);
+                colId = 2:nSources+1;
+            
+            
             end
            
             
@@ -1064,8 +1108,8 @@ for iFile = 1:nFiles
             R(:, :, :, :) = 0;
             
             for iBand = 1:nFreqBands
-                for a = 1:rowId
-                    for b = 1:colId
+                for a = 1:length(rowId)
+                    for b = 1:length(colId)
                         XA = cell2mat(out(a));
                         XB = cell2mat(out(b));
                         connectivity = ml_mvconnectivity(XA, XB, OPTIONS.Method, ...

@@ -45,7 +45,7 @@ function sProcess = GetDescription()
     sProcess.nMinFiles   = 1;
     
     % === CONNECT INPUT
-    sProcess = process_corr1n('DefineConnectOptions', sProcess, 1);
+    sProcess = process_corr1n('DefineConnectOptions', sProcess, 0);
 
     % === UNCONSTRAINED SOURCES ===
     sProcess.options.reduction.Comment    = 'Number of PCs to use';
