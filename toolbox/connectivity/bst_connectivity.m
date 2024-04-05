@@ -983,21 +983,28 @@ for iFile = 1:nFiles
 
         case {'mim', 'mpsi'}
 
-            DisplayUnits = 'Multivariate Connectivity';
+            if strcmp(OPTIONS.Method, 'mim')
+                DisplayUnits = 'Multivariate Interaction Measure';
+                OPTIONS.isSymmetric = 1;
+                symmetry = 1
+            else
+                DisplayUnits = 'Multivariate Phase Slope Index';
+                OPTIONS.isSymmetric = 0;
+                symmetry = -1;
+            end
             Comment = upper(OPTIONS.Method);
 
-            % Se NxN fare solo su scout
-            %   Se Unconstrained fare us PC
-            %   Se Constrained fare su PC
-            
-            % Se 1xN fare solo se unconstrained
-            %   Fare PC su scout con nPC = 3
-           
+            % ---------------------------
+            % When the connectivity is NxN:
+            % 1) I can have scouts with unconstrained sources
+            % 2) I can have scouts with constrained sources
+            % In both cases I have to reduce the dimensionality
+            % NxN source-wise is memory consuming.
+
             if isConnNN
 
-                
-                
                 if OPTIONS.isScoutA == OPTIONS.isScoutB
+
                     rowNames = cell(numel(sInputA.RowNames), 3);
                     nSources = numel(sInputA.RowNames);
         
@@ -1013,8 +1020,6 @@ for iFile = 1:nFiles
                         end
                     end
         
-                    % We converted the vertices from string to double
-                    % for later comparison
                     scout_vertices = str2double(rowNames(:, 2));
                     
                     nScouts = numel(sInputA.Atlas.Scouts);
@@ -1040,45 +1045,46 @@ for iFile = 1:nFiles
                     end
                     bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
                     
-                    
-                    
+                    % Build a structure for storing data and indices for calculation
+                    R =  ones(nScouts * sInputA.nComponents, ... 
+                              nScouts * sInputA.nComponents, ...
+                              1, nFreqBands);
+                    [rowId, colId] = find(tril(R(:,:,1,1), -1));
+
 
                 else
                     Messages = 'Cannot calculate MVCONN without scouts';
                     bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
-
-
                 end
             end
 
+            % ---------------------------
+            % When the connectivity is 1xN:
+            % I have A which is a scout and B which is unconstrained
+            % A should be reduced to 3 dimensions.
+            % 
             if ~isConnNN
-                
+
                 if isUnconstrA
-                    
                     out{1} = pca(sInputA.Data, 'NumComponents', 3);
-                
+                    
                 else
                     Messages = 'Cannot calculate Multivariate Connectivity (1xN) with constrained sources.';
                     bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
-                    
-                    
                 end
                 
-                
+                % maybe this if can be removed
                 if isUnconstrB
-                
-                   rowNames = cell(numel(sInputB.RowNames), 3);
-                   nSources = numel(sInputB.RowNames);
-
+                    
                    nSources = size(sInputB.Data, 1) / sInputB.nComponents;
 
-                    for v = 2:nSources+1
+                   for v = 2:nSources
                         mask = sInputB.RowNames == v;
-                        source_data = sInputB.Data(mask', :);
-                        out{v} = source_data;
+                        reduced_data = pca(sInputB.Data(mask', :), 'NumComponents', 3);
+                        out{v} = reduced_data';
 
-                    end
-                    bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nSources, nSources));
+                   end
+                   bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', 1, nSources));
                 
                 else
                     Messages = 'Cannot calculate Multivariate Connectivity (1xN) with constrained sources.';
@@ -1086,27 +1092,19 @@ for iFile = 1:nFiles
                     
                     
                 end
-                                
+                % Check
+                R = ones(1 * sInputA.nComponents, ...
+                         nSources * sInputB.nComponents, 1, nFreqBands);
                 rowId = ones(1, nSources);
                 colId = 2:nSources+1;
             
             
             end
-           
-            
-            % R = [84 x 84 x 1871 x 6]
-            
-            % Output structure: it must be with these dimensions.
-            % Unfortunately for unconstrained sources we need to enlarge
-            % the matrix.
-            R =  ones(numel(out) * sInputA.nComponents, ...
-                      numel(out) * sInputA.nComponents, ...
-                      nTime, nFreqBands);
 
-            [rowId, colId] = find(tril(R(:,:,1,1), -1));
-
+            % Put zero in the structure
             R(:, :, :, :) = 0;
             
+            % XA and XB are TxNp
             for iBand = 1:nFreqBands
                 for a = 1:length(rowId)
                     for b = 1:length(colId)
@@ -1115,14 +1113,16 @@ for iFile = 1:nFiles
                         connectivity = ml_mvconnectivity(XA, XB, OPTIONS.Method, ...
                                                        size(XA, 2), size(XA, 2), ...
                                                        sfreq, BandBounds(iBand, :));
+                                                   
                         % Here we want to fill only a part of the matrix
                         % which the will be summed over zeros (see
                         % Finalize)
                         R(a * sInputA.nComponents, ...
                           b * sInputA.nComponents, 1, iBand) = connectivity;
-
+                        
+                        % Are them symmetric?
                         R(b * sInputA.nComponents, ...
-                          a * sInputA.nComponents, 1, iBand) = connectivity;
+                          a * sInputA.nComponents, 1, iBand) = connectivity * symmetry;
                     end
                 end
             end
