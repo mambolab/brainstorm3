@@ -1,0 +1,125 @@
+# Workflow to test Brainstorm source on GitHub-Hosted Linux, Windows and macOS runners
+
+# Workflow name
+name: Run tutorial (source)
+
+# Parameters
+env:
+  MATLAB_VER: R2021b # Oldest "b" release available for Windows runner
+
+# When the workflow will run
+on:
+  # Run on Push to a given branch
+  push:
+    branches:
+      - fake-branch
+  # Run manually from GitHub Actions tab, it must be in the default branch
+  workflow_dispatch:
+    # Inputs that appear on GitHub
+    inputs:
+      tutorialname:
+        type: choice
+        description: Tutorial to run
+        options:
+        - tutorial_introduction
+        - tutorial_connectivity
+        - tutorial_coherence
+        - tutorial_ephys
+        - tutorial_epilepsy
+        - tutorial_epileptogenicity
+        - tutorial_neuromag
+        - tutorial_phantom_ctf
+        - tutorial_phantom_elekta
+        - tutorial_practicalmeeg
+        - tutorial_raw
+        - tutorial_resting
+        - tutorial_simulations
+        - tutorial_yokogawa
+        required: true
+    # In addition to the tutorialname, there are two variables: TEST_TUTORIAL_BSTUSER and TEST_TUTORIAL_BSTPWD
+    # These variables are created as "secrets" in this repo, and are used to download data and send report by email
+
+# Name for each run
+run-name: "Run: ${{ github.event.inputs.tutorialname }}"
+
+jobs:
+  # Ubuntu job
+  Run-Ubuntu:
+    name: Run on Linux (Ubuntu 20.04)
+    runs-on: ubuntu-20.04
+    steps:
+      # Get the Brainstorm code to test
+      - name: Checkout 'brainstorm3' in 'brainstorm3'
+        uses: actions/checkout@v3
+        with:
+          path: brainstorm3
+      # Setting Matlab, if done after 2nd checkout, Matlab cannot find brainstorm.m
+      - name: Set up Matlab
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: ${{ env.MATLAB_VER }}
+          products: >
+            Optimization_Toolbox
+            Signal_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Image_Processing_Toolbox
+      # Run testing
+      - name: Run script
+        uses: matlab-actions/run-command@v2
+        with:
+          command: cd("brainstorm3"), brainstorm ./toolbox/script/test_tutorial.m ${{ github.event.inputs.tutorialname }} '' '' ${{ secrets.TEST_TUTORIAL_BSTUSER }} ${{ secrets.TEST_TUTORIAL_BSTPWD }} local
+          startup-options: -nodisplay
+
+  # macOS job
+  Run-MacOS:
+    name: Run on macOS (12 Monterey)
+    runs-on: macos-12
+    steps:
+      # Get the Brainstorm code to test
+      - name: Checkout 'brainstorm3' in 'brainstorm3'
+        uses: actions/checkout@v3
+        with:
+          path: brainstorm3
+      # Setting Matlab, if done after 2nd checkout, Matlab cannot find brainstorm.m
+      - name: Set up Matlab
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: ${{ env.MATLAB_VER }}
+          products: >
+            Optimization_Toolbox
+            Signal_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Image_Processing_Toolbox
+      # Run testing
+      - name: Run script
+        uses: matlab-actions/run-command@v2
+        with:
+          command: cd("brainstorm3"), brainstorm ./toolbox/script/test_tutorial.m ${{ github.event.inputs.tutorialname }} '' '' ${{ secrets.TEST_TUTORIAL_BSTUSER }} ${{ secrets.TEST_TUTORIAL_BSTPWD }} local
+          startup-options: -nodisplay
+
+  # Windows job
+  Run-Windows:
+    name: Run on Windows (Server 2019)
+    runs-on: windows-2019
+    steps:
+      # Get the Brainstorm code to test
+      - name: Checkout 'brainstorm3' in 'brainstorm3'
+        uses: actions/checkout@v3
+        with:
+          path: brainstorm3
+      # Setting Matlab, if done after 2nd checkout, Matlab cannot find brainstorm.m
+      - name: Set up Matlab
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: ${{ env.MATLAB_VER }}
+          products: >
+            Optimization_Toolbox
+            Signal_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+            Image_Processing_Toolbox
+      # Run testing
+      - name: Run script
+        uses: matlab-actions/run-command@v2
+        with:
+          command: cd("brainstorm3"), brainstorm .\toolbox\script\test_tutorial.m ${{ github.event.inputs.tutorialname }} '' '' ${{ secrets.TEST_TUTORIAL_BSTUSER }} ${{ secrets.TEST_TUTORIAL_BSTPWD }} local
+          startup-options: -nodisplay
