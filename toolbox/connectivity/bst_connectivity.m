@@ -985,12 +985,8 @@ for iFile = 1:nFiles
 
             if strcmp(OPTIONS.Method, 'mim')
                 DisplayUnits = 'Multivariate Interaction Measure';
-                OPTIONS.isSymmetric = 1;
-                symmetry = 1
             else
                 DisplayUnits = 'Multivariate Phase Slope Index';
-                OPTIONS.isSymmetric = 0;
-                symmetry = -1;
             end
             Comment = upper(OPTIONS.Method);
 
@@ -1002,6 +998,8 @@ for iFile = 1:nFiles
             % NxN source-wise is memory consuming.
 
             if isConnNN
+                
+                nComponents = OPTIONS.ReductionNComponents{1};
 
                 if OPTIONS.isScoutA == OPTIONS.isScoutB
 
@@ -1039,21 +1037,21 @@ for iFile = 1:nFiles
                         
                         % We use a PCA with nComponents from UI
                         % TODO: Manage the possibility to do not reduce data.
-                        reduced_data = pca(scout_data, 'NumComponents', OPTIONS.ReductionNComponents{1});
+                        [~, reduced_data] = pca(scout_data', 'NumComponents', nComponents);
                         
                         out{s} = reduced_data';
                     end
                     bst_progress('text', sprintf('Calculating: MVCONN [%dx%d]...', nScouts, nScouts));
                     
                     % Build a structure for storing data and indices for calculation
-                    R =  ones(nScouts * sInputA.nComponents, ... 
-                              nScouts * sInputA.nComponents, ...
-                              1, nFreqBands);
-                    [rowId, colId] = find(tril(R(:,:,1,1), -1));
+                    [iA, iB] = find(tril(ones(nScouts, nScouts), -1));
+                    
+                    nScoutsA = nScouts;
+                    nScoutsB = nScouts;
 
 
                 else
-                    Messages = 'Cannot calculate MVCONN without scouts';
+                    Messages = 'Cannot calculate MVCONN NxN without scouts';
                     bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
                 end
             end
@@ -1064,23 +1062,22 @@ for iFile = 1:nFiles
             % A should be reduced to 3 dimensions.
             % 
             if ~isConnNN
-
+                nComponents = 3;
                 if isUnconstrA
-                    out{1} = pca(sInputA.Data, 'NumComponents', 3);
-                    
+                    [~, seed] = pca(sInputA.Data', 'NumComponents', nComponents);
+                    out{1} = seed';
                 else
                     Messages = 'Cannot calculate Multivariate Connectivity (1xN) with constrained sources.';
                     bst_report('Error', OPTIONS.ProcessName, unique({FilesA{iFile}, FilesB{iFile}}), Messages);
                 end
                 
-                % maybe this if can be removed
                 if isUnconstrB
                     
                    nSources = size(sInputB.Data, 1) / sInputB.nComponents;
 
-                   for v = 2:nSources
-                        mask = sInputB.RowNames == v;
-                        reduced_data = pca(sInputB.Data(mask', :), 'NumComponents', 3);
+                   for v = 2:nSources+1
+                        mask = sInputB.RowNames == v - 1;
+                        [~, reduced_data] = pca(sInputB.Data(mask', :)', 'NumComponents', nComponents);
                         out{v} = reduced_data';
 
                    end
@@ -1093,37 +1090,82 @@ for iFile = 1:nFiles
                     
                 end
                 % Check
-                R = ones(1 * sInputA.nComponents, ...
-                         nSources * sInputB.nComponents, 1, nFreqBands);
-                rowId = ones(1, nSources);
-                colId = 2:nSources+1;
-            
+                iA = ones(1, nSources)';
+                iB = (2:nSources+1)';
+                
+                nScoutsA = 1;
+                nScoutsB = nSources;
             
             end
 
-            % Put zero in the structure
-            R(:, :, :, :) = 0;
+            if isempty(R)
+                R.xspectrum = cell(length(iA), nFreqBands);
+                R.nodesA = iA;
+                R.nodesB = iB;
+                R.nSignalsA = zeros(length(iA), 1);
+                R.nSignalsB = zeros(length(iB), 1);
+                R.nScoutsA = nScoutsA;
+                R.nScoutsB = nScoutsB;
+                R.nComponentsA = sInputA.nComponents;
+                R.nComponentsB = sInputB.nComponents;
+            end
             
-            % XA and XB are TxNp
-            for iBand = 1:nFreqBands
-                for a = 1:length(rowId)
-                    for b = 1:length(colId)
-                        XA = cell2mat(out(a));
-                        XB = cell2mat(out(b));
-                        connectivity = ml_mvconnectivity(XA, XB, OPTIONS.Method, ...
-                                                       size(XA, 2), size(XA, 2), ...
-                                                       sfreq, BandBounds(iBand, :));
-                                                   
-                        % Here we want to fill only a part of the matrix
-                        % which the will be summed over zeros (see
-                        % Finalize)
-                        R(a * sInputA.nComponents, ...
-                          b * sInputA.nComponents, 1, iBand) = connectivity;
+            average_factor = 1;
+            if ~strcmpi(OPTIONS.OutputMode, 'input')
+                average_factor = 1 / nFiles;
+            end
+            
+            
+            
+            % XA and XB must be NpxT
+            for iConn = 1:length(iA)
+
+                ia = iA(iConn);
+                ib = iB(iConn);
+
+                XA = cell2mat(out(ia));
+                XB = cell2mat(out(ib));
+
+                R.nSignalsA(iConn) = size(XA, 1);
+                R.nSignalsB(iConn) = size(XB, 1);
+
+                data = [XA; XB]';
+                segleng = size(XA, 2);
+                epleng = size(XA, 2);
+
+                segshift = segleng / 2;
+
+                % This can be passed and not calculated every time
+                frequency_resolution = sfreq / (.5 * segleng);
+                f = [0 : floor(segleng / 2)] * frequency_resolution;
+                
+                for iBand = 1:nFreqBands
+                
+                    freqbins = BandBounds(iBand, :);
+
+                    if isempty(freqbins)
+                        fmax = floor(.5 * segleng) + 1;
+                        fmin = 1;
+                    else
+                        % Check
+                        maxfreqbin = max(max(freqbins));
+                        [~, fmax] = min(diff(f <= maxfreqbin));
                         
-                        % Are them symmetric?
-                        R(b * sInputA.nComponents, ...
-                          a * sInputA.nComponents, 1, iBand) = connectivity * symmetry;
+                        minfreqbin = min(min(freqbins));
+                        [~, fmin] = max(diff(f > minfreqbin));
                     end
+                    
+                    [xspectrum, ~] = ml_xspectrum(data, segleng, segshift, epleng , fmax);
+                    %[xspectrum, navg] = ml_data2cs(data, segleng, segshift, epleng , fmax);                                
+                                      
+                    xspectrum = xspectrum(:, :, fmin : fmax) * average_factor; 
+                    
+                    if isempty(R.xspectrum{iConn, iBand})
+                        R.xspectrum{iConn, iBand} = xspectrum;
+                    else
+                        R.xspectrum{iConn, iBand} = R.xspectrum{iConn, iBand} + xspectrum;
+                    end
+                                                   
                 end
             end
             
@@ -1300,6 +1342,8 @@ function NewFile = Finalize(DataFile)
                         R = imag(R.Sab).^2 ./ (1-real(R.Sab).^2);
                         R(isnan(R(:))) = 0;
                 end
+            otherwise
+                R = ml_bstconnectivity(R, OPTIONS.Method);   
                 
         end
         % Static measures may need to be reshaped to add singleton time dimension.
